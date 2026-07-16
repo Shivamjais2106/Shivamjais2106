@@ -23,6 +23,8 @@
 
 - 📫 How to reach me **shivamjais2106@gmail.com**
 
+- 🌐 Portfolio: **[shivamjaiswal-portfolio.vercel.app](https://shivamjaiswal-portfolio.vercel.app)**
+
 - ⚡ Fun fact **I enjoy turning ideas into full-stack applications and learning by building real-world projects.**
 
 <h3 align="left">Connect with me:</h3>
