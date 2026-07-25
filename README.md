@@ -46,11 +46,14 @@
  -->
 
 
-
-<!--START_SECTION:profile-->
+<div align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="light.svg">
-  <img alt="Shivamjais2106 profile" src="dark.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Shivamjais2106/Shivamjais2106/main/dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/Shivamjais2106/Shivamjais2106/main/light.svg">
+  <img alt="Shivam Jaiswal" src="https://raw.githubusercontent.com/Shivamjais2106/Shivamjais2106/main/dark.svg">
 </picture>
-<!--END_SECTION:profile-->
+</div>
+
+<div align="center">
+<img src="https://streak-stats.demolab.com?user=Shivamjais2106&theme=tokyonight&hide_border=true" />
+</div>

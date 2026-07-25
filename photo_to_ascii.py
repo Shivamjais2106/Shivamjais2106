@@ -1,72 +1,109 @@
+#!/usr/bin/env python3
 """
-photo_to_ascii.py
-------------------
-Converts a photo into a grid of colors (portrait.txt) that generate_profile.py
-uses to draw a pixel-art style portrait inside the terminal SVG.
+Turns a photo into the ASCII portrait shown on the left of the profile card.
 
-Usage:
-    python photo_to_ascii.py <input_image> [--cols 40] [--rows 46]
+Run this ONLY when you want to change the photo:
+    pip install pillow numpy rembg onnxruntime
+    python photo_to_ascii.py my_photo.jpg
 
-Output:
-    portrait.txt - one line per row, hex colors comma-separated per column
+It writes portrait.txt, which generate_profile.py reads. The daily GitHub
+Action never runs this file, so the workflow stays dependency-free.
+
+Tuning knobs:
+  COLS      characters across (more = more detail, but widen the card)
+  BUST      how far down the body to keep, as a fraction of the subject height
+            (1.0 = keep everything rembg detected, ~0.6 = chest-up only)
+  DETAIL    local-contrast gain — raise it if the shirt looks like a solid blob
+  WEIGHT    how much of the overall light/dark shape to keep (0 = pure edges)
 """
-
 import sys
-import argparse
-from PIL import Image, ImageEnhance
+from pathlib import Path
 
+import numpy as np
+from PIL import Image, ImageFilter, ImageOps
+from rembg import remove
 
-def image_to_grid(path: str, cols: int, rows: int, glitch_tint: bool = True):
-    img = Image.open(path).convert("RGB")
-
-    # Crop to a portrait-ish aspect ratio (matches the terminal panel shape)
-    target_ratio = cols / rows
-    w, h = img.size
-    current_ratio = w / h
-    if current_ratio > target_ratio:
-        new_w = int(h * target_ratio)
-        left = (w - new_w) // 2
-        img = img.crop((left, 0, left + new_w, h))
-    else:
-        new_h = int(w / target_ratio)
-        top = (h - new_h) // 2
-        img = img.crop((0, top, w, top + new_h))
-
-    img = img.resize((cols, rows), Image.LANCZOS)
-
-    # Slight contrast/color boost so the pixel art reads well at small size
-    img = ImageEnhance.Contrast(img).enhance(1.15)
-    img = ImageEnhance.Color(img).enhance(1.2)
-
-    rows_out = []
-    for y in range(rows):
-        row_colors = []
-        for x in range(cols):
-            r, g, b = img.getpixel((x, y))
-            if glitch_tint:
-                # Push toward blue/purple/magenta like a CRT/terminal glitch photo
-                r = min(255, int(r * 0.85))
-                b = min(255, int(b * 1.15 + 20))
-            row_colors.append("#%02x%02x%02x" % (r, g, b))
-        rows_out.append(",".join(row_colors))
-    return rows_out
-
+SRC = sys.argv[1] if len(sys.argv) > 1 else "photo.jpg"
+COLS = 120
+ASPECT = 1.75
+DETAIL = 2.6
+WEIGHT = 0.65
+BUST = 0.62                      # chest-up crop; raise toward 1.0 to keep more of the body
+RAMP = "@$B%8&WM#*oahkbdpqwmZO0QLCJUXYzcvuxrjft/|()1{}[]?-_+~<>i!lI;:,\"^`'. "
+KEEP_FULL_IMAGE = False  # Set to False to remove background and crop to bust
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("input", help="Path to source photo (jpg/png)")
-    parser.add_argument("--cols", type=int, default=40)
-    parser.add_argument("--rows", type=int, default=46)
-    parser.add_argument("--out", default="portrait.txt")
-    parser.add_argument("--no-tint", action="store_true")
-    args = parser.parse_args()
+    img = Image.open(SRC)
 
-    grid = image_to_grid(args.input, args.cols, args.rows, glitch_tint=not args.no_tint)
+    if KEEP_FULL_IMAGE:
+        g = np.asarray(ImageOps.autocontrast(img.convert("L"), cutoff=1), dtype=np.int16)
+        h, w = g.shape
 
-    with open(args.out, "w") as f:
-        f.write("\n".join(grid))
+        # local contrast
+        blur = np.asarray(Image.fromarray(g.astype(np.uint8))
+                          .filter(ImageFilter.GaussianBlur(max(2, w // 55))), dtype=np.int16)
+        ink = np.clip(150 + (g - blur) * DETAIL + (g - 128) * WEIGHT, 0, 255)
 
-    print(f"Wrote {args.cols}x{args.rows} pixel grid to {args.out}")
+        lo, hi = np.percentile(ink, 2), np.percentile(ink, 98)
+        ink = np.clip((ink - lo) * 255.0 / max(1, hi - lo), 0, 255)
+
+        rows = max(1, int(COLS * (h / w) / ASPECT))
+        small = np.asarray(Image.fromarray(ink.astype(np.uint8))
+                           .resize((COLS, rows), Image.LANCZOS), dtype=float)
+
+        n = len(RAMP) - 1
+        lines = []
+        for y in range(rows):
+            line = "".join(
+                RAMP[round(small[y, x] / 255 * n)]
+                for x in range(COLS)
+            )
+            lines.append(line)
+    else:
+        cut = remove(img)                       # cut the subject out of the background
+        rgba = np.asarray(cut)
+        alpha = rgba[:, :, 3]
+
+        ys, xs = np.nonzero(alpha > 60)
+        x0, x1 = xs.min(), xs.max()
+        y0 = ys.min()
+        y1 = int(y0 + (ys.max() - y0) * BUST)               # head + torso only
+        pad = 8
+        box = (max(0, x0 - pad), max(0, y0 - pad),
+               min(rgba.shape[1], x1 + pad), min(rgba.shape[0], y1))
+
+        cut = cut.crop(box)
+        a = np.asarray(cut)[:, :, 3].astype(float) / 255.0
+        g = np.asarray(ImageOps.autocontrast(cut.convert("L"), cutoff=1), dtype=np.int16)
+        h, w = g.shape
+
+        # local contrast: pulls folds/edges out of the flat dark shirt
+        blur = np.asarray(Image.fromarray(g.astype(np.uint8))
+                          .filter(ImageFilter.GaussianBlur(max(2, w // 55))), dtype=np.int16)
+        ink = np.clip(150 + (g - blur) * DETAIL + (g - 128) * WEIGHT, 0, 255)
+
+        inside = a > 0.5
+        lo, hi = np.percentile(ink[inside], 2), np.percentile(ink[inside], 98)
+        ink = np.clip((ink - lo) * 255.0 / max(1, hi - lo), 0, 255)
+
+        rows = max(1, int(COLS * (h / w) / ASPECT))
+        small = np.asarray(Image.fromarray(ink.astype(np.uint8))
+                           .resize((COLS, rows), Image.LANCZOS), dtype=float)
+        mask = np.asarray(Image.fromarray((a * 255).astype(np.uint8))
+                          .resize((COLS, rows), Image.LANCZOS), dtype=float)
+
+        n = len(RAMP) - 1
+        lines = []
+        for y in range(rows):
+            line = "".join(
+                RAMP[round(small[y, x] / 255 * n)] if mask[y, x] > 110 else " "
+                for x in range(COLS)
+            )
+            lines.append(line.rstrip())
+
+    Path(__file__).parent.joinpath("portrait.txt").write_text("\n".join(lines), encoding="utf-8")
+    print("\n".join(lines))
+    print(f"\nwrote portrait.txt  ({COLS} cols x {rows} rows)")
 
 
 if __name__ == "__main__":

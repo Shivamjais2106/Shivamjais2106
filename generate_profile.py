@@ -1,638 +1,266 @@
-# """
-# generate_profile.py
-# --------------------
-# Builds a neofetch-style terminal SVG (dark.svg + light.svg) using:
-#   - config.json      -> personal info, stack, projects, links
-#   - portrait.txt      -> pixel-color grid (from photo_to_ascii.py)
-#   - GitHub public API -> total contributions + current/longest streak
-
-# Then injects <picture> markup into README.md between:
-#   <!--START_SECTION:profile--> ... <!--END_SECTION:profile-->
-
-# Usage:
-#     python generate_profile.py
-# """
-
-# import json
-# import datetime
-# import urllib.request
-
-# CONFIG_FILE = "config.json"
-# PORTRAIT_FILE = "portrait.txt"
-# README_FILE = "README.md"
-# START_MARKER = "<!--START_SECTION:profile-->"
-# END_MARKER = "<!--END_SECTION:profile-->"
-
-# CELL = 4          # px size of each pixel-art cell
-# PANEL_W = 900
-# FONT = "SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace"
-
-
-# # ---------- data loading ----------
-
-# def load_config():
-#     with open(CONFIG_FILE) as f:
-#         return json.load(f)
-
-
-# def load_portrait():
-#     with open(PORTRAIT_FILE) as f:
-#         lines = [l.strip() for l in f if l.strip()]
-#     return [line.split(",") for line in lines]
-
-
-# def fetch_contribution_stats(username):
-#     """Uses the free github-contributions-api (no auth needed) to get a
-#     daily contribution list, then derives total / current / longest streak."""
-#     url = f"https://github-contributions-api.jogruber.de/v4/{username}?y=all"
-#     try:
-#         with urllib.request.urlopen(url, timeout=10) as resp:
-#             data = json.loads(resp.read().decode())
-#         days = data.get("contributions", [])
-#         days.sort(key=lambda d: d["date"])
-#     except Exception as e:
-#         print(f"warning: could not fetch contribution stats ({e}); using zeros")
-#         return {"total": 0, "current_streak": 0, "current_range": "-",
-#                 "longest_streak": 0, "longest_range": "-"}
-
-#     total = sum(d["count"] for d in days)
-
-#     # current streak: walk back from today/most recent day
-#     today = datetime.date.today()
-#     by_date = {d["date"]: d["count"] for d in days}
-#     cur_streak = 0
-#     cur_end = None
-#     cursor = today
-#     while True:
-#         key = cursor.isoformat()
-#         if by_date.get(key, 0) > 0:
-#             if cur_end is None:
-#                 cur_end = cursor
-#             cur_streak += 1
-#             cursor -= datetime.timedelta(days=1)
-#         else:
-#             if cursor == today:
-#                 # today has no contribution yet; check yesterday onward
-#                 cursor -= datetime.timedelta(days=1)
-#                 today = cursor  # shift window start
-#                 continue
-#             break
-#     cur_start = cursor + datetime.timedelta(days=1) if cur_streak else None
-
-#     # longest streak
-#     longest = 0
-#     longest_start = longest_end = None
-#     run = 0
-#     run_start = None
-#     for d in days:
-#         if d["count"] > 0:
-#             if run == 0:
-#                 run_start = d["date"]
-#             run += 1
-#             if run > longest:
-#                 longest = run
-#                 longest_start = run_start
-#                 longest_end = d["date"]
-#         else:
-#             run = 0
-
-#     def fmt(d):
-#         if isinstance(d, str):
-#             d = datetime.date.fromisoformat(d)
-#         return d.strftime("%b %d")
-
-#     return {
-#         "total": total,
-#         "current_streak": cur_streak,
-#         "current_range": f"{fmt(cur_start)} - {fmt(cur_end)}" if cur_streak else "-",
-#         "longest_streak": longest,
-#         "longest_range": f"{fmt(longest_start)} - {fmt(longest_end)}" if longest else "-",
-#     }
-
-
-# # ---------- svg building ----------
-
-# def esc(s):
-#     return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
-
-
-# def build_pixel_art(grid, x, y):
-#     """Returns list of <rect> strings for the portrait grid at offset x,y."""
-#     out = []
-#     for ry, row in enumerate(grid):
-#         for rx, color in enumerate(row):
-#             out.append(
-#                 f'<rect x="{x + rx * CELL}" y="{y + ry * CELL}" '
-#                 f'width="{CELL}" height="{CELL}" fill="{color}"/>'
-#             )
-#     return "".join(out)
-
-
-# def build_svg(cfg, grid, stats, theme="dark"):
-#     colors = {
-#         "dark": dict(bg="#0d1117", panel="#161b22", border="#30363d",
-#                      text="#c9d1d9", dim="#8b949e", accent="#7ee787",
-#                      accent2="#58a6ff", warn="#f0883e", title="#e6edf3"),
-#         "light": dict(bg="#ffffff", panel="#f6f8fa", border="#d0d7de",
-#                       text="#24292f", dim="#57606a", accent="#116329",
-#                       accent2="#0969da", warn="#9a6700", title="#1f2328"),
-#     }[theme]
-
-#     grid_h = len(grid)
-#     grid_w = len(grid[0]) if grid_h else 0
-#     art_w = grid_w * CELL
-#     art_h = grid_h * CELL
-
-#     top_bar_h = 34
-#     content_y = top_bar_h + 30
-#     art_x = 24
-#     text_x = art_x + art_w + 40
-
-#     lines = []  # (label, value) or ("__section__", title) or ("__raw__", text)
-#     lines.append(("__raw__", f'{cfg["name"]}'))
-#     lines.append(("__gap__", ""))
-#     lines.append(("Role", cfg["role"]))
-#     lines.append(("Edu", cfg["edu"]))
-#     lines.append(("Focus", cfg["focus"]))
-#     lines.append(("__gap__", ""))
-#     lines.append(("__section__", "~/stack"))
-#     for k, v in cfg["stack"].items():
-#         lines.append((k, v))
-#     lines.append(("__gap__", ""))
-#     lines.append(("__section__", "~/projects"))
-#     for k, v in cfg["projects"].items():
-#         lines.append((k, v))
-#     lines.append(("__gap__", ""))
-#     lines.append(("__section__", "~/highlights"))
-#     for k, v in cfg["highlights"].items():
-#         lines.append((k, v))
-#     lines.append(("__gap__", ""))
-#     lines.append(("__section__", "~/reach"))
-#     for k, v in cfg["reach"].items():
-#         lines.append((k, v))
-
-#     line_h = 21
-#     label_col_w = 100
-#     text_elems = []
-#     ty = content_y + 8
-#     for kind, val in lines:
-#         if kind == "__gap__":
-#             ty += line_h * 0.5
-#             continue
-#         if kind == "__section__":
-#             text_elems.append(
-#                 f'<text x="{text_x}" y="{ty}" fill="{colors["accent2"]}" '
-#                 f'font-family="{FONT}" font-size="13" font-weight="600">{esc(val)}</text>'
-#             )
-#             ty += line_h
-#             continue
-#         if kind == "__raw__":
-#             text_elems.append(
-#                 f'<text x="{text_x}" y="{ty}" fill="{colors["title"]}" '
-#                 f'font-family="{FONT}" font-size="16" font-weight="700">{esc(val)}</text>'
-#             )
-#             ty += line_h + 6
-#             continue
-#         label, value = kind, val
-#         text_elems.append(
-#             f'<text x="{text_x}" y="{ty}" fill="{colors["dim"]}" '
-#             f'font-family="{FONT}" font-size="12.5">{esc(label)}</text>'
-#         )
-#         text_elems.append(
-#             f'<text x="{text_x + label_col_w}" y="{ty}" fill="{colors["text"]}" '
-#             f'font-family="{FONT}" font-size="12.5">{esc(value)}</text>'
-#         )
-#         ty += line_h
-
-#     panel_content_h = max(art_h, ty - content_y) + 40
-#     panel_h = top_bar_h + panel_content_h
-
-#     stats_gap = 24
-#     stats_h = 110
-#     total_h = panel_h + stats_gap + stats_h + 10
-
-#     now = datetime.datetime.now().strftime("%d %b %Y, %H:%M")
-
-#     def stat_box(cx, value, label, sub, ring_color=None):
-#         w = 270
-#         h = stats_h
-#         parts = [
-#             f'<rect x="{cx}" y="{panel_h + stats_gap}" width="{w}" height="{h}" rx="10" '
-#             f'fill="{colors["panel"]}" stroke="{colors["border"]}"/>',
-#             f'<text x="{cx + w/2}" y="{panel_h + stats_gap + 46}" text-anchor="middle" '
-#             f'fill="{ring_color or colors["title"]}" font-family="{FONT}" '
-#             f'font-size="26" font-weight="700">{value}</text>',
-#             f'<text x="{cx + w/2}" y="{panel_h + stats_gap + 68}" text-anchor="middle" '
-#             f'fill="{colors["dim"]}" font-family="{FONT}" font-size="11">{esc(label)}</text>',
-#             f'<text x="{cx + w/2}" y="{panel_h + stats_gap + 88}" text-anchor="middle" '
-#             f'fill="{colors["dim"]}" font-family="{FONT}" font-size="10">{esc(sub)}</text>',
-#         ]
-#         return "".join(parts)
-
-#     box_gap = 20
-#     box_w = 270
-#     start_x = (PANEL_W - (box_w * 3 + box_gap * 2)) / 2
-#     stats_svg = (
-#         stat_box(start_x, stats["total"], "Total Contributions",
-#                   f"Oct 2024 - Present", colors["accent2"])
-#         + stat_box(start_x + box_w + box_gap, stats["current_streak"],
-#                     "Current Streak", stats["current_range"], colors["warn"])
-#         + stat_box(start_x + (box_w + box_gap) * 2, stats["longest_streak"],
-#                     "Longest Streak", stats["longest_range"], colors["accent"])
-#     )
-
-#     svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{PANEL_W}" height="{total_h}" viewBox="0 0 {PANEL_W} {total_h}">
-#   <rect width="{PANEL_W}" height="{total_h}" fill="{colors["bg"]}"/>
-#   <rect x="0" y="0" width="{PANEL_W}" height="{panel_h}" rx="12" fill="{colors["panel"]}" stroke="{colors["border"]}"/>
-#   <rect x="0" y="0" width="{PANEL_W}" height="{top_bar_h}" rx="12" fill="{colors["panel"]}"/>
-#   <circle cx="20" cy="{top_bar_h/2}" r="6" fill="#ff5f56"/>
-#   <circle cx="40" cy="{top_bar_h/2}" r="6" fill="#ffbd2e"/>
-#   <circle cx="60" cy="{top_bar_h/2}" r="6" fill="#27c93f"/>
-#   <text x="{PANEL_W/2}" y="{top_bar_h/2 + 4}" text-anchor="middle" fill="{colors["dim"]}"
-#         font-family="{FONT}" font-size="12">{esc(cfg["github_username"])} - zsh - 90x26</text>
-
-#   <text x="{art_x}" y="{content_y - 6}" fill="{colors["accent"]}" font-family="{FONT}" font-size="13">
-#     &#8594;  ~ neofetch --profile
-#   </text>
-
-#   <g transform="translate(0,{content_y})">
-#     {build_pixel_art(grid, art_x, 8)}
-#   </g>
-#   {"".join(text_elems)}
-
-#   <text x="{art_x}" y="{panel_h - 14}" fill="{colors["accent"]}" font-family="{FONT}" font-size="12">
-#     &#8594;  ~ {esc(cfg["role"])}
-#   </text>
-#   <text x="{PANEL_W - 24}" y="{panel_h - 14}" text-anchor="end" fill="{colors["dim"]}"
-#         font-family="{FONT}" font-size="11">Last updated {esc(now)}</text>
-
-#   {stats_svg}
-# </svg>'''
-#     return svg
-
-
-# # ---------- readme injection ----------
-
-# def update_readme(username):
-#     block = (
-#         f"{START_MARKER}\n"
-#         f"<picture>\n"
-#         f'  <source media="(prefers-color-scheme: dark)" srcset="dark.svg">\n'
-#         f'  <source media="(prefers-color-scheme: light)" srcset="light.svg">\n'
-#         f'  <img alt="{username} profile" src="dark.svg">\n'
-#         f"</picture>\n"
-#         f"{END_MARKER}"
-#     )
-#     try:
-#         with open(README_FILE) as f:
-#             content = f.read()
-#     except FileNotFoundError:
-#         content = f"{START_MARKER}\n{END_MARKER}\n"
-
-#     if START_MARKER in content and END_MARKER in content:
-#         pre = content.split(START_MARKER)[0]
-#         post = content.split(END_MARKER)[1]
-#         content = pre + block + post
-#     else:
-#         content = content.rstrip() + "\n\n" + block + "\n"
-
-#     with open(README_FILE, "w") as f:
-#         f.write(content)
-
-
-# def main():
-#     cfg = load_config()
-#     grid = load_portrait()
-#     stats = fetch_contribution_stats(cfg["github_username"])
-
-#     for theme in ("dark", "light"):
-#         svg = build_svg(cfg, grid, stats, theme=theme)
-#         with open(f"{theme}.svg", "w") as f:
-#             f.write(svg)
-
-#     update_readme(cfg["github_username"])
-#     print("Generated dark.svg, light.svg and updated README.md")
-#     print(f"Stats: {stats}")
-
-
-# if __name__ == "__main__":
-#     main()
-
+#!/usr/bin/env python3
 """
-generate_profile.py
---------------------
-Builds a neofetch-style terminal SVG (dark.svg + light.svg) using:
-  - config.json      -> personal info, stack, projects, links
-  - portrait.txt      -> pixel-color grid (from photo_to_ascii.py)
-  - GitHub public API -> total contributions + current/longest streak
+Generates an animated terminal-style GitHub profile card (dark.svg + light.svg).
 
-Then injects <picture> markup into README.md between:
-  <!--START_SECTION:profile--> ... <!--END_SECTION:profile-->
-
-Usage:
-    python generate_profile.py
+Everything you'd normally want to tweak lives in CONFIG / INFO below.
+Stats (repos, stars, followers) are pulled live from the GitHub API when the
+script runs in Actions; if the API is unreachable it silently falls back.
 """
 
 import json
-import datetime
+import os
 import urllib.request
+from datetime import datetime, timezone, timedelta
+from html import escape
+from pathlib import Path
 
-CONFIG_FILE = "config.json"
-PORTRAIT_FILE = "portrait.txt"
-README_FILE = "README.md"
-START_MARKER = "<!--START_SECTION:profile-->"
-END_MARKER = "<!--END_SECTION:profile-->"
+# ----------------------------------------------------------------------------
+# CONFIG
+# ----------------------------------------------------------------------------
+USERNAME = "Shivamjais2106"
 
-CELL = 4          # px size of each pixel-art cell
-PANEL_W = 900
-FONT = "SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace"
-
-
-# ---------- data loading ----------
-
-def load_config():
-    with open(CONFIG_FILE, encoding="utf-8") as f:
-        return json.load(f)
-
+PORTRAIT_FILE = "portrait.txt"   # generated by photo_to_ascii.py
 
 def load_portrait():
-    with open(PORTRAIT_FILE, encoding="utf-8") as f:
-        lines = [l.strip() for l in f if l.strip()]
-    return [line.split(",") for line in lines]
+    f = Path(__file__).parent / PORTRAIT_FILE
+    if f.exists():
+        return f.read_text(encoding="utf-8").rstrip("\n").split("\n")
+    return ["[ portrait.txt missing ]"]
 
 
-def fetch_contribution_stats(username):
-    """Uses the free github-contributions-api (no auth needed) to get a
-    daily contribution list, then derives total / current / longest streak."""
-    url = f"https://github-contributions-api.jogruber.de/v4/{username}?y=all"
+# (label, value, colour-key)  |  colour-key: key / val / accent / warn / muted
+INFO = [
+    ("__header__", "Shivam Jaiswal", ""),
+    ("__rule__", "", ""),
+    ("Role", "Full Stack Developer / MERN & Next.js", "val"),
+    ("Edu", "B.Tech CS & IT · SIRT, Bhopal", "val"),
+    ("Focus", "MERN Stack · Next.js · AI Integrations", "accent"),
+    ("__blank__", "", ""),
+    ("__section__", "~/stack", ""),
+    ("Frontend", "React.js · Next.js · Tailwind CSS", "val"),
+    ("Backend", "Node.js · Express.js", "val"),
+    ("Database", "MongoDB", "val"),
+    ("AI/APIs", "Groq API · Gemini API", "val"),
+    ("Tools", "VS Code · Git · GitHub · Postman", "val"),
+    ("__blank__", "", ""),
+    ("__section__", "~/projects", ""),
+    ("ChatSphere", "Real-time chat app", "warn"),
+    ("TechnoKart", "E-commerce monorepo", "warn"),
+    ("ContentForge", "AI content platform + payments", "warn"),
+    ("Internova AI", "Next.js + FastAPI AI service", "warn"),
+    ("Civic Issues Portal", "Civic issue reporting platform", "warn"),
+    ("LinkForge", "URL shortener", "warn"),
+    ("__blank__", "", ""),
+    ("__section__", "~/highlights", ""),
+    ("Internship", "RRID Tech Pvt. Ltd.", "val"),
+    ("__blank__", "", ""),
+    ("__section__", "~/reach", ""),
+    ("GitHub", "github.com/Shivamjais2106", "accent"),
+    ("LinkedIn", "linkedin.com/in/your-linkedin-handle", "accent"),
+    ("Mail", "your-email@gmail.com", "accent"),
+]
+
+THEMES = {
+    "dark": {
+        "bg": "#0d1117", "panel": "#161b22", "border": "#30363d",
+        "text": "#c9d1d9", "muted": "#8b949e", "key": "#3fb950",
+        "accent": "#58a6ff", "warn": "#d29922", "art": "#bc8cff",
+        "prompt": "#3fb950", "dot1": "#ff5f56", "dot2": "#ffbd2e", "dot3": "#27c93f",
+    },
+    "light": {
+        "bg": "#ffffff", "panel": "#f6f8fa", "border": "#d0d7de",
+        "text": "#1f2328", "muted": "#59636e", "key": "#1a7f37",
+        "accent": "#0969da", "warn": "#9a6700", "art": "#8250df",
+        "prompt": "#1a7f37", "dot1": "#ff5f56", "dot2": "#ffbd2e", "dot3": "#27c93f",
+    },
+}
+
+W, H = 980, 640
+ART_X, ART_Y = 30, 86
+ART_CW = 3.9          # forced char width (textLength keeps this exact in any font)
+ART_LH = ART_CW * 1.72
+INFO_X, INFO_Y, INFO_LH = 418, 92, 17.5
+VAL_X = INFO_X + 148
+
+
+# ----------------------------------------------------------------------------
+# STATS
+# ----------------------------------------------------------------------------
+def fetch_stats():
+    stats = {"repos": "-", "stars": "-", "followers": "-"}
     try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            data = json.loads(resp.read().decode())
-        days = data.get("contributions", [])
-        days.sort(key=lambda d: d["date"])
-    except Exception as e:
-        print(f"warning: could not fetch contribution stats ({e}); using zeros")
-        return {"total": 0, "current_streak": 0, "current_range": "-",
-                "longest_streak": 0, "longest_range": "-"}
+        headers = {"User-Agent": "profile-readme"}
+        token = os.environ.get("GITHUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
-    total = sum(d["count"] for d in days)
+        req = urllib.request.Request(
+            f"https://api.github.com/users/{USERNAME}", headers=headers)
+        user = json.load(urllib.request.urlopen(req, timeout=15))
+        stats["repos"] = str(user.get("public_repos", 0))
+        stats["followers"] = str(user.get("followers", 0))
 
-    # current streak: walk back from today/most recent day
-    today = datetime.date.today()
-    by_date = {d["date"]: d["count"] for d in days}
-    cur_streak = 0
-    cur_end = None
-    cursor = today
-    while True:
-        key = cursor.isoformat()
-        if by_date.get(key, 0) > 0:
-            if cur_end is None:
-                cur_end = cursor
-            cur_streak += 1
-            cursor -= datetime.timedelta(days=1)
-        else:
-            if cursor == today:
-                # today has no contribution yet; check yesterday onward
-                cursor -= datetime.timedelta(days=1)
-                today = cursor  # shift window start
-                continue
-            break
-    cur_start = cursor + datetime.timedelta(days=1) if cur_streak else None
-
-    # longest streak
-    longest = 0
-    longest_start = longest_end = None
-    run = 0
-    run_start = None
-    for d in days:
-        if d["count"] > 0:
-            if run == 0:
-                run_start = d["date"]
-            run += 1
-            if run > longest:
-                longest = run
-                longest_start = run_start
-                longest_end = d["date"]
-        else:
-            run = 0
-
-    def fmt(d):
-        if isinstance(d, str):
-            d = datetime.date.fromisoformat(d)
-        return d.strftime("%b %d")
-
-    return {
-        "total": total,
-        "current_streak": cur_streak,
-        "current_range": f"{fmt(cur_start)} - {fmt(cur_end)}" if cur_streak else "-",
-        "longest_streak": longest,
-        "longest_range": f"{fmt(longest_start)} - {fmt(longest_end)}" if longest else "-",
-    }
+        stars, page = 0, 1
+        while page <= 5:
+            req = urllib.request.Request(
+                f"https://api.github.com/users/{USERNAME}/repos"
+                f"?per_page=100&page={page}", headers=headers)
+            repos = json.load(urllib.request.urlopen(req, timeout=15))
+            if not repos:
+                break
+            stars += sum(r.get("stargazers_count", 0) for r in repos)
+            page += 1
+        stats["stars"] = str(stars)
+    except Exception as e:  # offline / rate-limited -> keep placeholders
+        print(f"[warn] stats fetch failed: {e}")
+    return stats
 
 
-# ---------- svg building ----------
+# ----------------------------------------------------------------------------
+# RENDER
+# ----------------------------------------------------------------------------
+def render(theme_name, colors, stats, ist_now):
+    art_lines = load_portrait()
+    max_len = max(len(line) for line in art_lines) if art_lines else 0
+    art_lines = [line.ljust(max_len) for line in art_lines]
 
-def esc(s):
-    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    if theme_name == "dark":
+        ramp = "@%#*+=-:. "
+        inv = {ramp[i]: ramp[-1 - i] for i in range(len(ramp))}
+        art_lines = ["".join(inv.get(c, c) for c in line) for line in art_lines]
 
-
-def build_pixel_art(grid, x, y):
-    """Returns list of <rect> strings for the portrait grid at offset x,y."""
-    out = []
-    for ry, row in enumerate(grid):
-        for rx, color in enumerate(row):
-            out.append(
-                f'<rect x="{x + rx * CELL}" y="{y + ry * CELL}" '
-                f'width="{CELL}" height="{CELL}" fill="{color}"/>'
-            )
-    return "".join(out)
-
-
-def build_svg(cfg, grid, stats, theme="dark"):
-    colors = {
-        "dark": dict(bg="#0d1117", panel="#161b22", border="#30363d",
-                     text="#c9d1d9", dim="#8b949e", accent="#7ee787",
-                     accent2="#58a6ff", warn="#f0883e", title="#e6edf3"),
-        "light": dict(bg="#ffffff", panel="#f6f8fa", border="#d0d7de",
-                      text="#24292f", dim="#57606a", accent="#116329",
-                      accent2="#0969da", warn="#9a6700", title="#1f2328"),
-    }[theme]
-
-    grid_h = len(grid)
-    grid_w = len(grid[0]) if grid_h else 0
-    art_w = grid_w * CELL
-    art_h = grid_h * CELL
-
-    top_bar_h = 34
-    content_y = top_bar_h + 30
-    art_x = 24
-    text_x = art_x + art_w + 40
-
-    lines = []  # (label, value) or ("__section__", title) or ("__raw__", text)
-    lines.append(("__raw__", f'{cfg["name"]}'))
-    lines.append(("__gap__", ""))
-    lines.append(("Role", cfg["role"]))
-    lines.append(("Edu", cfg["edu"]))
-    lines.append(("Focus", cfg["focus"]))
-    lines.append(("__gap__", ""))
-    lines.append(("__section__", "~/stack"))
-    for k, v in cfg["stack"].items():
-        lines.append((k, v))
-    lines.append(("__gap__", ""))
-    lines.append(("__section__", "~/projects"))
-    for k, v in cfg["projects"].items():
-        lines.append((k, v))
-    lines.append(("__gap__", ""))
-    lines.append(("__section__", "~/highlights"))
-    for k, v in cfg["highlights"].items():
-        lines.append((k, v))
-    lines.append(("__gap__", ""))
-    lines.append(("__section__", "~/reach"))
-    for k, v in cfg["reach"].items():
-        lines.append((k, v))
-
-    line_h = 21
-    label_col_w = 155
-    text_elems = []
-    ty = content_y + 8
-    for kind, val in lines:
-        if kind == "__gap__":
-            ty += line_h * 0.5
-            continue
-        if kind == "__section__":
-            text_elems.append(
-                f'<text x="{text_x}" y="{ty}" fill="{colors["accent2"]}" '
-                f'font-family="{FONT}" font-size="13" font-weight="600">{esc(val)}</text>'
-            )
-            ty += line_h
-            continue
-        if kind == "__raw__":
-            text_elems.append(
-                f'<text x="{text_x}" y="{ty}" fill="{colors["title"]}" '
-                f'font-family="{FONT}" font-size="16" font-weight="700">{esc(val)}</text>'
-            )
-            ty += line_h + 6
-            continue
-        label, value = kind, val
-        text_elems.append(
-            f'<text x="{text_x}" y="{ty}" fill="{colors["dim"]}" '
-            f'font-family="{FONT}" font-size="12.5">{esc(label)}</text>'
-        )
-        text_elems.append(
-            f'<text x="{text_x + label_col_w}" y="{ty}" fill="{colors["text"]}" '
-            f'font-family="{FONT}" font-size="12.5">{esc(value)}</text>'
-        )
-        ty += line_h
-
-    panel_content_h = max(art_h, ty - content_y) + 40
-    panel_h = top_bar_h + panel_content_h
-
-    stats_gap = 24
-    stats_h = 110
-    total_h = panel_h + stats_gap + stats_h + 10
-
-    now = datetime.datetime.now().strftime("%d %b %Y, %H:%M")
-
-    def stat_box(cx, value, label, sub, ring_color=None):
-        w = 270
-        h = stats_h
-        parts = [
-            f'<rect x="{cx}" y="{panel_h + stats_gap}" width="{w}" height="{h}" rx="10" '
-            f'fill="{colors["panel"]}" stroke="{colors["border"]}"/>',
-            f'<text x="{cx + w/2}" y="{panel_h + stats_gap + 46}" text-anchor="middle" '
-            f'fill="{ring_color or colors["title"]}" font-family="{FONT}" '
-            f'font-size="26" font-weight="700">{value}</text>',
-            f'<text x="{cx + w/2}" y="{panel_h + stats_gap + 68}" text-anchor="middle" '
-            f'fill="{colors["dim"]}" font-family="{FONT}" font-size="11">{esc(label)}</text>',
-            f'<text x="{cx + w/2}" y="{panel_h + stats_gap + 88}" text-anchor="middle" '
-            f'fill="{colors["dim"]}" font-family="{FONT}" font-size="10">{esc(sub)}</text>',
-        ]
-        return "".join(parts)
-
-    box_gap = 20
-    box_w = 270
-    start_x = (PANEL_W - (box_w * 3 + box_gap * 2)) / 2
-    stats_svg = (
-        stat_box(start_x, stats["total"], "Total Contributions",
-                  f"Oct 2024 - Present", colors["accent2"])
-        + stat_box(start_x + box_w + box_gap, stats["current_streak"],
-                    "Current Streak", stats["current_range"], colors["warn"])
-        + stat_box(start_x + (box_w + box_gap) * 2, stats["longest_streak"],
-                    "Longest Streak", stats["longest_range"], colors["accent"])
+    parts = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+        f'viewBox="0 0 {W} {H}" font-family="ui-monospace, SFMono-Regular, '
+        f'\'JetBrains Mono\', \'Cascadia Code\', Menlo, Consolas, monospace">'
     )
 
-    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{PANEL_W}" height="{total_h}" viewBox="0 0 {PANEL_W} {total_h}">
-  <rect width="{PANEL_W}" height="{total_h}" fill="{colors["bg"]}"/>
-  <rect x="0" y="0" width="{PANEL_W}" height="{panel_h}" rx="12" fill="{colors["panel"]}" stroke="{colors["border"]}"/>
-  <rect x="0" y="0" width="{PANEL_W}" height="{top_bar_h}" rx="12" fill="{colors["panel"]}"/>
-  <circle cx="20" cy="{top_bar_h/2}" r="6" fill="#ff5f56"/>
-  <circle cx="40" cy="{top_bar_h/2}" r="6" fill="#ffbd2e"/>
-  <circle cx="60" cy="{top_bar_h/2}" r="6" fill="#27c93f"/>
-  <text x="{PANEL_W/2}" y="{top_bar_h/2 + 4}" text-anchor="middle" fill="{colors["dim"]}"
-        font-family="{FONT}" font-size="12">{esc(cfg["github_username"])} - zsh - 90x26</text>
+    # styles + animations
+    parts.append(f"""<style>
+    .art  {{ fill:{colors['art']}; font-size:6.2px; white-space:pre; }}
+    .key  {{ fill:{colors['key']}; font-size:13px; font-weight:700; }}
+    .val  {{ fill:{colors['text']}; font-size:13px; }}
+    .acc  {{ fill:{colors['accent']}; font-size:13px; }}
+    .wrn  {{ fill:{colors['warn']}; font-size:13px; }}
+    .mut  {{ fill:{colors['muted']}; font-size:12px; }}
+    .hdr  {{ fill:{colors['accent']}; font-size:15px; font-weight:700; }}
+    .sec  {{ fill:{colors['muted']}; font-size:12px; letter-spacing:1px; }}
+    .ttl  {{ fill:{colors['muted']}; font-size:12px; }}
+    .row  {{ opacity:1; animation: fade .35s ease backwards; }}
+    @keyframes fade {{ from {{ opacity:0; transform:translateY(3px); }}
+                       to   {{ opacity:1; transform:translateY(0); }} }}
+    .cur  {{ fill:{colors['prompt']}; animation: blink 1s steps(1) infinite; }}
+    @keyframes blink {{ 50% {{ opacity:0; }} }}
+    .artline {{ opacity:1; animation: fade .3s ease backwards; }}
+    </style>""")
 
-  <text x="{art_x}" y="{content_y - 6}" fill="{colors["accent"]}" font-family="{FONT}" font-size="13">
-    &#8594;  ~ neofetch --profile
-  </text>
-
-  <g transform="translate(0,{content_y})">
-    {build_pixel_art(grid, art_x, 8)}
-  </g>
-  {"".join(text_elems)}
-
-  <text x="{art_x}" y="{panel_h - 14}" fill="{colors["accent"]}" font-family="{FONT}" font-size="12">
-    &#8594;  ~ {esc(cfg["role"])}
-  </text>
-  <text x="{PANEL_W - 24}" y="{panel_h - 14}" text-anchor="end" fill="{colors["dim"]}"
-        font-family="{FONT}" font-size="11">Last updated {esc(now)}</text>
-
-  {stats_svg}
-</svg>'''
-    return svg
-
-
-# ---------- readme injection ----------
-
-def update_readme(username):
-    block = (
-        f"{START_MARKER}\n"
-        f"<picture>\n"
-        f'  <source media="(prefers-color-scheme: dark)" srcset="dark.svg">\n'
-        f'  <source media="(prefers-color-scheme: light)" srcset="light.svg">\n'
-        f'  <img alt="{username} profile" src="dark.svg">\n'
-        f"</picture>\n"
-        f"{END_MARKER}"
+    # window chrome
+    parts.append(
+        f'<rect x="1" y="1" width="{W-2}" height="{H-2}" rx="12" '
+        f'fill="{colors["bg"]}" stroke="{colors["border"]}" stroke-width="1.5"/>'
     )
-    try:
-        with open(README_FILE, encoding="utf-8") as f:
-            content = f.read()
-    except FileNotFoundError:
-        content = f"{START_MARKER}\n{END_MARKER}\n"
+    parts.append(
+        f'<path d="M1 13 a12 12 0 0 1 12 -12 h{W-26} a12 12 0 0 1 12 12 v25 h{-(W-2)} z" '
+        f'fill="{colors["panel"]}"/>'
+    )
+    parts.append(f'<line x1="1" y1="38" x2="{W-1}" y2="38" stroke="{colors["border"]}"/>')
+    for i, c in enumerate(["dot1", "dot2", "dot3"]):
+        parts.append(f'<circle cx="{24 + i*20}" cy="20" r="6" fill="{colors[c]}"/>')
+    parts.append(
+        f'<text x="{W/2}" y="24" class="ttl" text-anchor="middle">'
+        f'{escape(USERNAME)} — zsh — 90×26</text>'
+    )
 
-    if START_MARKER in content and END_MARKER in content:
-        pre = content.split(START_MARKER)[0]
-        post = content.split(END_MARKER)[1]
-        content = pre + block + post
-    else:
-        content = content.rstrip() + "\n\n" + block + "\n"
+    # command line
+    parts.append(
+        f'<text x="{ART_X}" y="66" class="row" style="animation-delay:.05s">'
+        f'<tspan class="key">➜</tspan>'
+        f'<tspan class="acc" dx="8">~</tspan>'
+        f'<tspan class="val" dx="8">neofetch --profile</tspan></text>'
+    )
 
-    with open(README_FILE, "w", encoding="utf-8") as f:
-        f.write(content)
+    # ascii art
+    for i, line in enumerate(art_lines):
+        if not line.strip():
+            continue
+        y = ART_Y + i * ART_LH
+        delay = 0.15 + i * 0.012
+        tl = len(line) * ART_CW
+        parts.append(
+            f'<text x="{ART_X}" y="{y:.1f}" class="art artline" xml:space="preserve" '
+            f'textLength="{tl:.1f}" lengthAdjust="spacingAndGlyphs" '
+            f'style="animation-delay:{delay:.2f}s">{escape(line)}</text>'
+        )
+
+    # info block
+    y = INFO_Y
+    delay = 0.35
+    cls_map = {"val": "val", "accent": "acc", "warn": "wrn", "muted": "mut"}
+
+    for label, value, ckey in INFO:
+        d = f'style="animation-delay:{delay:.2f}s"'
+        if label == "__header__":
+            parts.append(f'<text x="{INFO_X}" y="{y:.1f}" class="hdr row" {d}>{escape(value)}</text>')
+            y += INFO_LH
+        elif label == "__rule__":
+            parts.append(
+                f'<line x1="{INFO_X}" y1="{y-8:.1f}" x2="{W-40}" y2="{y-8:.1f}" '
+                f'stroke="{colors["border"]}" class="row" {d}/>'
+            )
+            y += 8
+        elif label == "__blank__":
+            y += 10
+            continue
+        elif label == "__section__":
+            parts.append(f'<text x="{INFO_X}" y="{y:.1f}" class="sec row" {d}>{escape(value)}</text>')
+            y += INFO_LH
+        elif label == "__stats__":
+            stat_txt = (f'repos {stats["repos"]}   ·   stars {stats["stars"]}'
+                        f'   ·   followers {stats["followers"]}')
+            parts.append(
+                f'<text x="{INFO_X}" y="{y:.1f}" class="row" {d}>'
+                f'<tspan class="key">⚡</tspan>'
+                f'<tspan class="val" dx="8">{escape(stat_txt)}</tspan></text>'
+            )
+            y += INFO_LH
+        else:
+            cls = cls_map.get(ckey, "val")
+            if label:
+                parts.append(
+                    f'<text x="{INFO_X}" y="{y:.1f}" class="key row" {d}>{escape(label)}</text>'
+                )
+            parts.append(
+                f'<text x="{VAL_X}" y="{y:.1f}" class="{cls} row" {d}>{escape(value)}</text>'
+            )
+            y += INFO_LH
+        delay += 0.07
+
+    # footer prompt + blinking cursor
+    fy = H - 24
+    parts.append(
+        f'<text x="{ART_X}" y="{fy}" class="row" style="animation-delay:{delay+0.1:.2f}s">'
+        f'<tspan class="key">➜</tspan>'
+        f'<tspan class="acc" dx="8">~</tspan>'
+        f'<tspan class="val" dx="8"> Full Stack Developer </tspan>'
+        f'<tspan class="cur" dx="8">█</tspan></text>'
+    )
+    parts.append(
+        f'<text x="{W-34}" y="{fy}" class="mut" text-anchor="end">'
+        f'last updated {ist_now}</text>'
+    )
+    parts.append("</svg>")
+    return "\n".join(parts)
 
 
 def main():
-    cfg = load_config()
-    grid = load_portrait()
-    stats = fetch_contribution_stats(cfg["github_username"])
-
-    for theme in ("dark", "light"):
-        svg = build_svg(cfg, grid, stats, theme=theme)
-        with open(f"{theme}.svg", "w", encoding="utf-8") as f:
-            f.write(svg)
-
-    update_readme(cfg["github_username"])
-    print("Generated dark.svg, light.svg and updated README.md")
-    print(f"Stats: {stats}")
+    stats = fetch_stats()
+    ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    stamp = ist.strftime("%d %b %Y, %H:%M IST")
+    out = Path(__file__).parent
+    for name, colors in THEMES.items():
+        (out / f"{name}.svg").write_text(render(name, colors, stats, stamp), encoding="utf-8")
+        print(f"wrote {name}.svg")
 
 
 if __name__ == "__main__":
