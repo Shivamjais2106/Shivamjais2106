@@ -32,32 +32,33 @@ def load_portrait():
 INFO = [
     ("__header__", "Shivam Jaiswal", ""),
     ("__rule__", "", ""),
-    ("Role", "Full Stack Developer / MERN & Next.js", "val"),
-    ("Edu", "B.Tech CS & IT · SIRT, Bhopal", "val"),
-    ("Focus", "MERN Stack · Next.js · AI Integrations", "accent"),
+    ("Role", "Full-Stack MERN Developer / SDE-1 Aspirant", "val"),
+    ("Edu", "B.Tech CS & IT · SIRT, Bhopal (2023-2027)", "val"),
+    ("Focus", "MERN Stack · Next.js · AI-powered Apps", "accent"),
     ("__blank__", "", ""),
     ("__section__", "~/stack", ""),
-    ("Frontend", "React.js · Next.js · Tailwind CSS", "val"),
-    ("Backend", "Node.js · Express.js", "val"),
-    ("Database", "MongoDB", "val"),
-    ("AI/APIs", "Groq API · Gemini API", "val"),
-    ("Tools", "VS Code · Git · GitHub · Postman", "val"),
+    ("Languages", "JavaScript · Java · C", "val"),
+    ("Frontend", "React.js · Next.js · HTML5/CSS3 · Tailwind CSS", "val"),
+    ("Backend", "Node.js · Express.js · REST APIs · JWT", "val"),
+    ("Database", "MongoDB · Mongoose ODM", "val"),
+    ("AI/APIs", "Groq API · Gemini API · Prompt Engineering", "val"),
+    ("Tools", "Docker · Git · GitHub · Postman · Vercel · Render", "val"),
     ("__blank__", "", ""),
     ("__section__", "~/projects", ""),
-    ("ChatSphere", "Real-time chat app", "warn"),
-    ("TechnoKart", "E-commerce monorepo", "warn"),
-    ("ContentForge", "AI content platform + payments", "warn"),
-    ("Internova AI", "Next.js + FastAPI AI service", "warn"),
-    ("Civic Issues Portal", "Civic issue reporting platform", "warn"),
-    ("LinkForge", "URL shortener", "warn"),
+    ("TechnoKart", "Full-stack student marketplace, JWT auth + rentals", "warn"),
+    ("Internova AI", "AI career platform - resume analysis + roadmaps", "warn"),
+    ("Civic Issue System", "Civic issue reporting with live tracking + RBAC", "warn"),
     ("__blank__", "", ""),
-    ("__section__", "~/highlights", ""),
-    ("Internship", "RRID Tech Pvt. Ltd.", "val"),
+    ("__section__", "~/achievements", ""),
+    ("Hackathon", "3rd place - Vibe Coding, BMIET Sonipat (2025)", "val"),
+    ("Certs", "MERN Stack · Full-Stack Web Dev · DSA - Apna College", "val"),
     ("__blank__", "", ""),
     ("__section__", "~/reach", ""),
     ("GitHub", "github.com/Shivamjais2106", "accent"),
-    ("LinkedIn", "linkedin.com/in/your-linkedin-handle", "accent"),
-    ("Mail", "your-email@gmail.com", "accent"),
+    ("LinkedIn", "linkedin.com/in/shivam-jaiswal-37a951369", "accent"),
+    ("LeetCode", "leetcode.com/Shivamjais2303", "accent"),
+    ("Portfolio", "shivamjaiswal-portfolio.vercel.app", "accent"),
+    ("Mail", "shivamjais2106@gmail.com", "accent"),
 ]
 
 THEMES = {
@@ -75,12 +76,12 @@ THEMES = {
     },
 }
 
-W, H = 980, 640
 ART_X, ART_Y = 30, 86
 ART_CW = 3.9          # forced char width (textLength keeps this exact in any font)
 ART_LH = ART_CW * 1.72
-INFO_X, INFO_Y, INFO_LH = 418, 92, 17.5
-VAL_X = INFO_X + 148
+INFO_Y, INFO_LH = 92, 17.5
+LABEL_COL_W = 170     # room for the longest label, e.g. "Civic Issue Report"
+VAL_COL_W = 360       # room for the longest value text
 
 
 # ----------------------------------------------------------------------------
@@ -128,6 +129,17 @@ def render(theme_name, colors, stats, ist_now):
         ramp = "@%#*+=-:. "
         inv = {ramp[i]: ramp[-1 - i] for i in range(len(ramp))}
         art_lines = ["".join(inv.get(c, c) for c in line) for line in art_lines]
+
+    art_w = max_len * ART_CW
+    INFO_X = ART_X + art_w + 40      # always clear of the art, whatever its width
+    VAL_X = INFO_X + LABEL_COL_W
+    W = int(VAL_X + VAL_COL_W + 40)
+
+    art_h = ART_Y + len(art_lines) * ART_LH
+    info_rows = sum(1 for label, _, _ in INFO if label != "__blank__" and label != "__rule__")
+    info_blanks = sum(1 for label, _, _ in INFO if label == "__blank__")
+    info_h = INFO_Y + info_rows * INFO_LH + info_blanks * 10
+    H = int(max(art_h, info_h) + 60)
 
     parts = []
     parts.append(
@@ -242,7 +254,7 @@ def render(theme_name, colors, stats, ist_now):
         f'<text x="{ART_X}" y="{fy}" class="row" style="animation-delay:{delay+0.1:.2f}s">'
         f'<tspan class="key">➜</tspan>'
         f'<tspan class="acc" dx="8">~</tspan>'
-        f'<tspan class="val" dx="8"> Full Stack Developer </tspan>'
+        f'<tspan class="val" dx="8"> Full-Stack MERN Developer </tspan>'
         f'<tspan class="cur" dx="8">█</tspan></text>'
     )
     parts.append(
