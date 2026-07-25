@@ -70,5 +70,9 @@
 <text x="163.6" y="542.5" class="key row" style="animation-delay:2.03s">Mail</text>
 <text x="333.6" y="542.5" class="acc row" style="animation-delay:2.03s">shivamjais2106@gmail.com</text>
 <text x="30" y="588" class="row" style="animation-delay:2.20s"><tspan class="key">➜</tspan><tspan class="acc" dx="8">~</tspan><tspan class="val" dx="8"> Full-Stack MERN Developer </tspan><tspan class="cur" dx="8">█</tspan></text>
+<<<<<<< HEAD
 <text x="699" y="588" class="mut" text-anchor="end">last updated 26 Jul 2026, 02:00 IST</text>
+=======
+<text x="1038" y="588" class="mut" text-anchor="end">last updated 26 Jul 2026, 02:11 IST</text>
+>>>>>>> 5a16eeb (regenerate profile card with portrait)
 </svg>
