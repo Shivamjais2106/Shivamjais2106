@@ -1,0 +1,30 @@
+{
+  "github_username": "Shivamjais2106",
+  "name": "Shivam Jaiswal",
+  "role": "Full Stack Developer / MERN & Next.js",
+  "edu": "B.Tech CS & IT - SIRT, Bhopal",
+  "focus": "MERN Stack - Next.js - AI Integrations",
+  "stack": {
+    "Frontend": "React.js - Next.js - Tailwind CSS",
+    "Backend": "Node.js - Express.js",
+    "Database": "MongoDB",
+    "AI/APIs": "Groq API - Gemini API",
+    "Tools": "VS Code - Git - GitHub - Postman"
+  },
+  "projects": {
+    "ChatSphere": "Real-time chat app",
+    "TechnoKart": "E-commerce monorepo",
+    "ContentForge": "AI content platform + payments",
+    "Internova AI": "Next.js + FastAPI AI service",
+    "Civic Issues Portal": "Civic issue reporting platform",
+    "LinkForge": "URL shortener"
+  },
+  "highlights": {
+    "Internship": "RRID Tech Pvt. Ltd."
+  },
+  "reach": {
+    "GitHub": "github.com/Shivamjais2106",
+    "LinkedIn": "linkedin.com/in/your-linkedin-handle",
+    "Mail": "shivamjais2106@gmail.com"
+  }
+}
